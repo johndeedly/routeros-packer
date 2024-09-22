@@ -3,6 +3,7 @@
     /system clock set time-zone-name=CET;
     /ip service set telnet disabled=yes;
     /ip service set winbox disabled=yes;
+    /ip dns set servers=94.140.14.14,94.140.15.15;
     /system ntp server set enabled=yes use-local-clock=yes;
 } on-error={ :put "!! error configuring system"; };
 
