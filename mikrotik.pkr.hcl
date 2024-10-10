@@ -43,7 +43,7 @@ source "qemu" "default" {
     "/interface macvlan add name=lan1 mode=private interface=ether1<enter><wait>",
     "/interface macvlan add name=mgmt1 mode=private interface=ether1<enter><wait>",
     "/ip dhcp-client add disabled=no interface=mgmt1 add-default-route=yes<enter><wait>",
-    "/ipv6 dhcp-client add disabled=no interface=mgmt1 add-default-route=yes pool-name=TPP-v6 request=address,prefix<enter><wait>",
+    "/ipv6 dhcp-client add disabled=no interface=mgmt1 add-default-route=yes pool-name=TPP-v6 request=address<enter><wait>",
     "/ip service set ssh disabled=no<enter><wait>"
   ]
   memory               = var.memory
@@ -89,7 +89,9 @@ build {
   sources = ["source.qemu.default"]
 
   provisioner "shell" {
-    execute_command = ":do { /import {{ .Path }}; } on-error={ :put \"!! error executing {{ .Path }}\"; };"
+    # more verbose execution to identify script errors:
+    # execute_command = ":do { /import verbose=yes {{ .Path }}; } on-error={ :put \"!! error executing {{ .Path }}\"; };"
+    execute_command = "/import {{ .Path }};"
     remote_path = format("%s.rsc", uuidv4())
     script = "init.rsc"
   }
