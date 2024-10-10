@@ -35,6 +35,12 @@
     :put " - enable vlan filtering on brlan1";
     /interface bridge set brlan1 vlan-filtering=yes;
 
+    :put " - dhcpv4 client on wan1";
+    /ip dhcp-client add disabled=yes interface=wan1 add-default-route=yes;
+
+    :put " - dhcpv6 client on wan1";
+    /ipv6 dhcp-client add disabled=yes interface=wan1 add-default-route=yes pool-name=TPP2-v6 request=address;
+
     :put " - dhcpv4 server on user1 and guest1";
     /ip pool add name=user1-pool ranges=192.168.88.10-192.168.88.254;
     /ip pool add name=guest1-pool ranges=192.168.99.10-192.168.99.254;
@@ -52,6 +58,17 @@
     /ipv6 dhcp-server add name=guest1-dhcp-ipv6 address-pool=guest1-pool-ipv6 interface=guest1;
 } on-error={ :put "!! error configuring default network"; };
 
+:put ":: vpn server settings";
+:do {
+    :put " - create wireguard server";
+    /interface wireguard add listen-port=51820 mtu=1420 name=wg1;
+    /interface wireguard peers add allowed-address=172.21.0.0/30 interface=wg1 public-key="VmGMh+cwPdb8//NOhuf1i1VIThypkMQrKAO9Y55ghG8=";
+    /ip address add address=172.21.0.1/30 interface=wg1 network=172.21.0.0;
+
+    :put " - wireguard server summary";
+    /interface wireguard print;
+} on-error={ :put "!! error configuring vpn server settings"; };
+
 # https://help.mikrotik.com/docs/display/ROS/Building+Advanced+Firewall
 :put ":: basic firewall rules";
 :do {
@@ -59,16 +76,19 @@
     /interface list add name=WAN;
     /interface list add name=LAN;
     /interface list add name=MGMT;
+    /interface list add name=VPN;
     /interface list member add interface=wan1 list=WAN;
     /interface list member add interface=lan1 list=LAN;
     /interface list member add interface=brlan1 list=LAN;
     /interface list member add interface=user1 list=LAN;
     /interface list member add interface=guest1 list=LAN;
     /interface list member add interface=mgmt1 list=MGMT;
+    /interface list member add interface=wg1 list=VPN;
     
     :put " - add ipv4 rules to protect the mikrotik itself";
     /ip firewall filter add action=accept chain=input comment="accept ICMP after RAW" protocol=icmp;
     /ip firewall filter add action=accept chain=input comment="accept established,related,untracked" connection-state=established,related,untracked;
+    /ip firewall filter add action=accept chain=input comment="accept wireguard server traffic" dst-port=51820 protocol=udp;
     /ip firewall filter add action=drop chain=input comment="drop services not coming from MGMT" protocol=tcp dst-port=21,22,23,80,443,8291,8728,8729 in-interface-list=!MGMT;
     /ip firewall filter add action=drop chain=input comment="drop services not coming from MGMT" protocol=udp dst-port=21,22,23,80,443,8291,8728,8729 in-interface-list=!MGMT;
     /ip firewall filter add action=drop chain=input comment="drop all coming from WAN" in-interface-list=WAN;
@@ -81,9 +101,10 @@
     /ipv6 firewall filter add action=accept chain=input comment="accept IKE" dst-port=500,4500 protocol=udp;
     /ipv6 firewall filter add action=accept chain=input comment="accept IPSec AH" protocol=ipsec-ah;
     /ipv6 firewall filter add action=accept chain=input comment="accept IPSec ESP" protocol=ipsec-esp;
+    /ipv6 firewall filter add action=accept chain=input comment="accept wireguard server traffic" dst-port=51820 protocol=udp;
     /ipv6 firewall filter add action=drop chain=input comment="drop services not coming from MGMT" protocol=tcp dst-port=21,22,23,80,443,8291,8728,8729 in-interface-list=!MGMT;
     /ipv6 firewall filter add action=drop chain=input comment="drop services not coming from MGMT" protocol=udp dst-port=21,22,23,80,443,8291,8728,8729 in-interface-list=!MGMT;
-    /ipv6 firewall filter add action=drop chain=input comment="drop all coming from LAN" in-interface-list=WAN;
+    /ipv6 firewall filter add action=drop chain=input comment="drop all coming from WAN" in-interface-list=WAN;
 
     :put " - redirect external dns ipv4";
     /ip firewall nat add chain=dstnat action=dst-nat to-addresses=192.168.88.1 to-ports=53 protocol=udp dst-address=!192.168.88.1 in-interface-list=LAN dst-port=53;
@@ -106,7 +127,8 @@
     /ip firewall filter add action=fasttrack-connection chain=forward comment="fasttrack" connection-state=established,related;
     /ip firewall filter add action=accept chain=forward comment="accept established,related, untracked" connection-state=established,related,untracked;
     /ip firewall filter add action=drop chain=forward comment="drop invalid" connection-state=invalid;
-    /ip firewall filter add action=drop chain=forward comment=" drop all from WAN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=WAN;
+    /ip firewall filter add action=drop chain=forward comment="drop all from WAN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=WAN;
+    /ip firewall filter add action=drop chain=forward comment="drop all from VPN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=VPN;
     /ip firewall filter add action=drop chain=forward src-address-list=no_forward_ipv4 comment="drop bad forward IPs";
     /ip firewall filter add action=drop chain=forward dst-address-list=no_forward_ipv4 comment="drop bad forward IPs";
     
@@ -122,15 +144,19 @@
     /ipv6 firewall filter add action=accept chain=forward comment="accept AH" protocol=ipsec-ah;
     /ipv6 firewall filter add action=accept chain=forward comment="accept ESP" protocol=ipsec-esp;
     /ipv6 firewall filter add action=accept chain=forward comment="accept all that matches IPSec policy" ipsec-policy=in,ipsec;
-    /ipv6 firewall filter add action=drop chain=forward comment="drop everything else not coming from LAN" in-interface-list=!LAN;
+    /ipv6 firewall filter add action=drop chain=forward comment="drop all from WAN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=WAN;
+    /ipv6 firewall filter add action=drop chain=forward comment="drop all from VPN not DSTNATed" connection-nat-state=!dstnat connection-state=new in-interface-list=VPN;
+    /ipv6 firewall filter add action=drop chain=forward comment="drop everything else coming from WAN" in-interface-list=WAN;
     
     :put " - masquerade local network ipv4";
     /ip firewall nat add action=accept chain=srcnat comment="accept all that matches IPSec policy" ipsec-policy=out,ipsec disabled=yes;
-    /ip firewall nat add action=masquerade chain=srcnat comment="masquerade" out-interface-list=WAN;
+    /ip firewall nat add action=masquerade chain=srcnat comment="masquerade WAN" out-interface-list=WAN;
+    /ip firewall nat add action=masquerade chain=srcnat comment="masquerade VPN" out-interface-list=VPN;
     
     :put " - masquerade local network ipv6";
     /ipv6 firewall nat add action=accept chain=srcnat comment="accept all that matches IPSec policy" ipsec-policy=out,ipsec disabled=yes;
-    /ipv6 firewall nat add action=masquerade chain=srcnat comment="masquerade" out-interface-list=WAN;
+    /ipv6 firewall nat add action=masquerade chain=srcnat comment="masquerade WAN" out-interface-list=WAN;
+    /ipv6 firewall nat add action=masquerade chain=srcnat comment="masquerade VPN" out-interface-list=VPN;
     
     :put " - create bad ipv4 address lists";
     /ip firewall address-list add address=127.0.0.0/8 comment="RFC6890" list=bad_ipv4;
@@ -162,7 +188,7 @@
     /ip firewall raw add action=drop chain=prerouting comment="drop bogon IP's" dst-address-list=bad_ipv4;
     /ip firewall raw add action=drop chain=prerouting comment="drop bogon IP's" src-address-list=bad_src_ipv4;
     /ip firewall raw add action=drop chain=prerouting comment="drop bogon IP's" dst-address-list=bad_dst_ipv4;
-    /ip firewall raw add action=drop chain=prerouting comment="drop non global from WAN" src-address-list=not_global_ipv4 in-interface-list=WAN;
+    /ip firewall raw add action=drop chain=prerouting comment="drop non global from WAN (disabled when behind other local router)" src-address-list=not_global_ipv4 in-interface-list=WAN disabled=yes;
     /ip firewall raw add action=drop chain=prerouting comment="drop forward to local lan from WAN" in-interface-list=WAN dst-address=192.168.0.0/16;
     /ip firewall raw add action=drop chain=prerouting comment="drop local if not from default IP range" in-interface-list=LAN src-address=!192.168.0.0/16;
     /ip firewall raw add action=drop chain=prerouting comment="drop bad UDP" port=0 protocol=udp;
@@ -171,6 +197,7 @@
     /ip firewall raw add action=accept chain=prerouting comment="accept everything else from WAN" in-interface-list=WAN;
     /ip firewall raw add action=accept chain=prerouting comment="accept everything else from LAN" in-interface-list=LAN;
     /ip firewall raw add action=accept chain=prerouting comment="accept everything else from MGMT" in-interface-list=MGMT;
+    /ip firewall raw add action=accept chain=prerouting comment="accept everything else from VPN" in-interface-list=VPN;
     /ip firewall raw add action=drop chain=prerouting comment="drop the rest";
     
     /ip firewall raw add action=drop chain=bad_tcp comment="TCP flag filter" protocol=tcp tcp-flags=!fin,!syn,!rst,!ack;
@@ -217,13 +244,14 @@
     /ipv6 firewall raw add action=drop chain=prerouting comment="drop bogon IP's" dst-address-list=bad_ipv6;
     /ipv6 firewall raw add action=drop chain=prerouting comment="drop packets with bad SRC ipv6" src-address-list=bad_src_ipv6;
     /ipv6 firewall raw add action=drop chain=prerouting comment="drop packets with bad dst ipv6" dst-address-list=bad_dst_ipv6;
-    /ipv6 firewall raw add action=drop chain=prerouting comment="drop non global from WAN" src-address-list=not_global_ipv6 in-interface-list=WAN;
+    /ipv6 firewall raw add action=drop chain=prerouting comment="drop non global from WAN" src-address-list=not_global_ipv6 in-interface-list=WAN disabled=yes;
     /ipv6 firewall raw add action=jump chain=prerouting comment="jump to ICMPv6 chain" jump-target=icmp6 protocol=icmpv6;
     /ipv6 firewall raw add action=accept chain=prerouting comment="accept local multicast scope" dst-address=ff02::/16;
     /ipv6 firewall raw add action=drop chain=prerouting comment="drop other multicast destinations" dst-address=ff00::/8;
     /ipv6 firewall raw add action=accept chain=prerouting comment="accept everything else from WAN" in-interface-list=WAN;
     /ipv6 firewall raw add action=accept chain=prerouting comment="accept everything else from LAN" in-interface-list=LAN;
     /ipv6 firewall raw add action=accept chain=prerouting comment="accept everything else from MGMT" in-interface-list=MGMT;
+    /ipv6 firewall raw add action=accept chain=prerouting comment="accept everything else from VPN" in-interface-list=VPN;
     /ipv6 firewall raw add action=drop chain=prerouting comment="drop the rest";
     
     /ipv6 firewall raw add action=drop chain=icmp6 comment="rfc4890 drop ll if hop-limit!=255" dst-address=fe80::/10 hop-limit=not-equal:255 protocol=icmpv6;
