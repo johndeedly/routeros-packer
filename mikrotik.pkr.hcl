@@ -42,9 +42,9 @@ source "qemu" "default" {
     "/interface macvlan add name=wan1 mode=private interface=ether1<enter><wait>",
     "/interface macvlan add name=lan1 mode=private interface=ether1<enter><wait>",
     "/interface macvlan add name=mgmt1 mode=private interface=ether1<enter><wait>",
-    "/ip dhcp-client add disabled=no interface=mgmt1 add-default-route=yes<enter><wait>",
-    "/ipv6 dhcp-client add disabled=no interface=mgmt1 add-default-route=yes pool-name=TPP-v6 request=address<enter><wait>",
-    "/ip service set ssh disabled=no<enter><wait>"
+    "/ip dhcp-client add disabled=no interface=mgmt1 add-default-route=no use-peer-dns=no use-peer-ntp=no<enter><wait>",
+    "/ipv6 dhcp-client add disabled=no interface=mgmt1 add-default-route=no use-peer-dns=no request=address<enter><wait>",
+    "/ip service set ssh disabled=no<enter><wait5s>"
   ]
   memory               = var.memory
   format               = "qcow2"
