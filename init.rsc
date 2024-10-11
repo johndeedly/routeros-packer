@@ -61,8 +61,8 @@
 :put ":: vpn server settings";
 :do {
     :put " - create wireguard server";
-    /interface wireguard add listen-port=51820 mtu=1420 name=wg1;
-    /interface wireguard peers add allowed-address=172.21.0.0/30 interface=wg1 public-key="VmGMh+cwPdb8//NOhuf1i1VIThypkMQrKAO9Y55ghG8=";
+    /interface wireguard add listen-port=51820 mtu=1380 name=wg1;
+    /interface wireguard peers add allowed-address=172.21.0.0/30 endpoint-address=0.0.0.0 endpoint-port=51820 interface=wg1 name=peer1 persistent-keepalive=25s public-key="VmGMh+cwPdb8//NOhuf1i1VIThypkMQrKAO9Y55ghG8=";
     /ip address add address=172.21.0.1/30 interface=wg1 network=172.21.0.0;
 
     :put " - wireguard server summary";
