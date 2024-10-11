@@ -23,6 +23,9 @@
 
 :put ":: configure default network";
 :do {
+    :put " - additional wan port for load balancing";
+    /interface macvlan add name=wan2 mode=private interface=ether1;
+
     :put " - create bridge brlan1";
     /interface bridge add name=brlan1 comment="main lan bridge: vlan 16 users, 32 guests" frame-types=admit-only-vlan-tagged;
     /interface bridge port add bridge=brlan1 interface=lan1 pvid=16 frame-types=admit-only-untagged-and-priority-tagged;
@@ -35,12 +38,66 @@
     :put " - enable vlan filtering on brlan1";
     /interface bridge set brlan1 vlan-filtering=yes;
 
-    :put " - dhcpv4 client on wan1";
-    /ip dhcp-client add disabled=yes interface=wan1 add-default-route=yes;
-
-    :put " - dhcpv6 client on wan1";
-    /ipv6 dhcp-client add disabled=yes interface=wan1 add-default-route=yes pool-name=TPP2-v6 request=address;
-
+    :put " - dhcpv4 client on wan ports";
+    /routing table add disabled=no fib name=wan1_table_ipv4;
+    /ip route add check-gateway=ping disabled=yes dst-address=0.0.0.0/0 gateway=0.0.0.0 distance=1 routing-table=wan1_table_ipv4 suppress-hw-offload=no comment="wan1 dhcp script #1";
+    /ip route add check-gateway=ping disabled=yes dst-address=0.0.0.0/0 gateway=0.0.0.0 distance=1 suppress-hw-offload=no comment="wan1 dhcp script #2";
+    /ip dhcp-client add disabled=yes interface=wan1 script=\
+        ":if (\$bound=1) do={\
+        \n  :local routeID [/ip route find comment=\"wan1 dhcp script #1\"];\
+        \n  if ([/ip route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ip route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n  :local routeID [/ip route find comment=\"wan1 dhcp script #2\"];\
+        \n  if ([/ip route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ip route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n};" add-default-route=no use-peer-dns=no use-peer-ntp=no;
+    /routing table add disabled=no fib name=wan2_table_ipv4;
+    /ip route add check-gateway=ping disabled=yes dst-address=0.0.0.0/0 gateway=0.0.0.0 distance=1 routing-table=wan2_table_ipv4 suppress-hw-offload=no comment="wan2 dhcp script #1";
+    /ip route add check-gateway=ping disabled=yes dst-address=0.0.0.0/0 gateway=0.0.0.0 distance=2 suppress-hw-offload=no comment="wan2 dhcp script #2";
+    /ip dhcp-client add disabled=yes interface=wan2 script=\
+        ":if (\$bound=1) do={\
+        \n  :local routeID [/ip route find comment=\"wan2 dhcp script #1\"];\
+        \n  if ([/ip route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ip route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n  :local routeID [/ip route find comment=\"wan2 dhcp script #2\"];\
+        \n  if ([/ip route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ip route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n};" add-default-route=no use-peer-dns=no use-peer-ntp=no;
+    
+    :put " - dhcpv6 client on wan ports";
+    /routing table add disabled=no fib name=wan1_table_ipv6;
+    /ipv6 route add check-gateway=ping disabled=yes dst-address=::/0 gateway=:: distance=1 routing-table=wan1_table_ipv6 suppress-hw-offload=no comment="wan1 dhcp script #1";
+    /ipv6 route add check-gateway=ping disabled=yes dst-address=::/0 gateway=:: distance=1 suppress-hw-offload=no comment="wan1 dhcp script #2";
+    /ipv6 dhcp-client add disabled=yes interface=wan1 script=\
+        ":if (\$bound=1) do={\
+        \n  :local routeID [/ipv6 route find comment=\"wan1 dhcp script #1\"];\
+        \n  if ([/ipv6 route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ipv6 route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n  :local routeID [/ipv6 route find comment=\"wan1 dhcp script #2\"];\
+        \n  if ([/ipv6 route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ipv6 route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n};" add-default-route=no use-peer-dns=no pool-name=TPP2-v6 request=address;
+    /routing table add disabled=no fib name=wan2_table_ipv6;
+    /ipv6 route add check-gateway=ping disabled=yes dst-address=::/0 gateway=:: distance=1 routing-table=wan2_table_ipv6 suppress-hw-offload=no comment="wan2 dhcp script #1";
+    /ipv6 route add check-gateway=ping disabled=yes dst-address=::/0 gateway=:: distance=2 suppress-hw-offload=no comment="wan2 dhcp script #2";
+    /ipv6 dhcp-client add disabled=yes interface=wan2 script=\
+        ":if (\$bound=1) do={\
+        \n  :local routeID [/ipv6 route find comment=\"wan2 dhcp script #1\"];\
+        \n  if ([/ipv6 route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ipv6 route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n  :local routeID [/ipv6 route find comment=\"wan2 dhcp script #2\"];\
+        \n  if ([/ipv6 route get \$routeID gateway] != \$\"gateway-address\") do={\
+        \n    /ipv6 route set \$routeID disabled=no gateway=\$\"gateway-address\";\
+        \n  };\
+        \n};" add-default-route=no use-peer-dns=no pool-name=TPP3-v6 request=address;
+    
     :put " - dhcpv4 server on user1 and guest1";
     /ip pool add name=user1-pool ranges=192.168.88.10-192.168.88.254;
     /ip pool add name=guest1-pool ranges=192.168.99.10-192.168.99.254;
@@ -80,6 +137,7 @@
     /interface list add name=MGMT;
     /interface list add name=VPN;
     /interface list member add interface=wan1 list=WAN;
+    /interface list member add interface=wan2 list=WAN;
     /interface list member add interface=lan1 list=LAN;
     /interface list member add interface=brlan1 list=LAN;
     /interface list member add interface=user1 list=LAN;
@@ -278,4 +336,34 @@
     /ipv6 firewall raw add action=accept chain=icmp6 comment="rfc4890 inverse ND solic limit 5,10 only LAN" hop-limit=equal:255 icmp-options=141:0-255 in-interface-list=LAN limit=5,10:packet protocol=icmpv6;
     /ipv6 firewall raw add action=accept chain=icmp6 comment="rfc4890 inverse ND advert limit 5,10 only LAN" hop-limit=equal:255 icmp-options=142:0-255 in-interface-list=LAN limit=5,10:packet protocol=icmpv6;
     /ipv6 firewall raw add action=drop chain=icmp6 comment="drop other icmp" protocol=icmpv6;
+
+    :put " - pcc load balancing on wan ports - protect mgmt ports";
+    /ip firewall mangle add action=passthrough chain=prerouting connection-mark=no-mark connection-state=new in-interface-list=MGMT comment="MGMT->IN";
+    
+    :put " - pcc load balancing on wan ports - input/output chain";
+    /ip firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface=wan1 new-connection-mark=ISP1_conn comment="WAN->IN";
+    /ip firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface=wan2 new-connection-mark=ISP2_conn comment="WAN->IN";
+    /ip firewall mangle add action=mark-routing chain=output connection-mark=ISP1_conn new-routing-mark=wan1_table_ipv4 comment="OUT->WAN";
+    /ip firewall mangle add action=mark-routing chain=output connection-mark=ISP2_conn new-routing-mark=wan2_table_ipv4 comment="OUT->WAN";
+    
+    :put " - pcc load balancing on wan ports - forward chain";
+    /ip firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface-list=LAN dst-address-list=!not_global_ipv4 per-connection-classifier=src-address-and-port:2/0 new-connection-mark=ISP1_conn comment="LAN->WAN";
+    /ip firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface-list=LAN dst-address-list=!not_global_ipv4 per-connection-classifier=src-address-and-port:2/1 new-connection-mark=ISP2_conn comment="LAN->WAN";
+    /ip firewall mangle add action=mark-routing chain=prerouting in-interface-list=LAN connection-mark=ISP1_conn new-routing-mark=wan1_table_ipv4 comment="LAN->WAN";
+    /ip firewall mangle add action=mark-routing chain=prerouting in-interface-list=LAN connection-mark=ISP2_conn new-routing-mark=wan2_table_ipv4 comment="LAN->WAN";
+
+    :put " - pcc load balancing on wan6 ports - protect mgmt ports";
+    /ipv6 firewall mangle add action=passthrough chain=prerouting connection-mark=no-mark connection-state=new in-interface-list=MGMT comment="MGMT->IN";
+    
+    :put " - pcc load balancing on wan6 ports - input/output chain";
+    /ipv6 firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface=wan1 new-connection-mark=ISP1_conn comment="WAN->IN";
+    /ipv6 firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface=wan2 new-connection-mark=ISP2_conn comment="WAN->IN";
+    /ipv6 firewall mangle add action=mark-routing chain=output connection-mark=ISP1_conn new-routing-mark=wan1_table_ipv6 comment="OUT->WAN";
+    /ipv6 firewall mangle add action=mark-routing chain=output connection-mark=ISP2_conn new-routing-mark=wan2_table_ipv6 comment="OUT->WAN";
+    
+    :put " - pcc load balancing on wan6 ports - forward chain";
+    /ipv6 firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface-list=LAN dst-address-list=!not_global_ipv6 per-connection-classifier=src-address-and-port:2/0 new-connection-mark=ISP1_conn comment="LAN->WAN";
+    /ipv6 firewall mangle add action=mark-connection chain=prerouting connection-mark=no-mark connection-state=new in-interface-list=LAN dst-address-list=!not_global_ipv6 per-connection-classifier=src-address-and-port:2/1 new-connection-mark=ISP2_conn comment="LAN->WAN";
+    /ipv6 firewall mangle add action=mark-routing chain=prerouting in-interface-list=LAN connection-mark=ISP1_conn new-routing-mark=wan1_table_ipv6 comment="LAN->WAN";
+    /ipv6 firewall mangle add action=mark-routing chain=prerouting in-interface-list=LAN connection-mark=ISP2_conn new-routing-mark=wan2_table_ipv6 comment="LAN->WAN";
 } on-error={ :put "!! error adding basic firewall rules"; };
