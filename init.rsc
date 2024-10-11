@@ -10,10 +10,10 @@
 :put ":: enable self-signed ssl access";
 :do {
     :put " - ca certificate";
-    /certificate add name=LocalCA common-name=LocalCA days-valid=3650 key-usage=key-cert-sign,crl-sign;
+    /certificate add name=LocalCA common-name=LocalCA days-valid=36500 key-usage=key-cert-sign,crl-sign;
     /certificate sign LocalCA;
     :put " - webfig certificate";
-    /certificate add name=self-signed common-name=self-signed days-valid=3650;
+    /certificate add name=self-signed common-name=self-signed days-valid=36500;
     /certificate sign self-signed ca=LocalCA;
     :put " - enable www-ssl";
     /ip service set www-ssl certificate=self-signed disabled=no;
